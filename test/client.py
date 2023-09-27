@@ -61,6 +61,7 @@ class BundleMaterials(VerificationMaterials):
     """
 
     bundle: Path
+    trusted_root: Path
 
     @classmethod
     def from_input(cls, input: Path) -> BundleMaterials:
@@ -80,6 +81,7 @@ class SignatureCertificateMaterials(VerificationMaterials):
 
     signature: Path
     certificate: Path
+    trusted_root: Path
 
     @classmethod
     def from_input(cls, input: Path) -> SignatureCertificateMaterials:
@@ -106,13 +108,14 @@ class SigstoreClient:
     methods should not be called directly.
     """
 
-    def __init__(self, entrypoint: str, identity_token: str) -> None:
+    def __init__(self, entrypoint: str, supports_trusted_root: bool, identity_token: str) -> None:
         """
         Create a new `SigstoreClient`.
 
         `entrypoint` is the command to invoke the Sigstore client.
         """
         self.entrypoint = entrypoint
+        self.supports_trusted_root = supports_trusted_root
         self.identity_token = identity_token
 
     def run(self, *args) -> None:
@@ -218,9 +221,7 @@ class SigstoreClient:
         not be called directly.
         """
 
-        # The identity and OIDC issuer cannot be specified by the test since they remain constant
-        # across the GitHub Actions job.
-        self.run(
+        args = [
             "verify",
             "--signature",
             materials.signature,
@@ -230,8 +231,14 @@ class SigstoreClient:
             CERTIFICATE_IDENTITY,
             "--certificate-oidc-issuer",
             CERTIFICATE_OIDC_ISSUER,
-            artifact,
-        )
+        ]
+
+        if getattr(materials, "trusted_root", None) is not None:
+            args.extend(["--trusted-root", materials.trusted_root])
+
+        # The identity and OIDC issuer cannot be specified by the test since they remain constant
+        # across the GitHub Actions job.
+        self.run(*args, artifact)
 
     @verify.register
     def _verify_for_bundle(self, materials: BundleMaterials, artifact: os.PathLike) -> None:
@@ -242,7 +249,7 @@ class SigstoreClient:
         directly.
         """
 
-        self.run(
+        args = [
             "verify-bundle",
             "--bundle",
             materials.bundle,
@@ -250,5 +257,9 @@ class SigstoreClient:
             CERTIFICATE_IDENTITY,
             "--certificate-oidc-issuer",
             CERTIFICATE_OIDC_ISSUER,
-            artifact,
-        )
+        ]
+
+        if getattr(materials, "trusted_root", None) is not None:
+            args.extend(["--trusted-root", materials.trusted_root])
+
+        self.run(*args, artifact)
